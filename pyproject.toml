@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pintos-utils"
+version = "1.0.0"
+description = "Reusable, provider-neutral utilities for Python applications."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+gmail = [
+    "google-api-python-client>=2.150,<3",
+    "google-auth>=2.35,<3",
+    "google-auth-httplib2>=0.2,<1",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13,<2",
+    "pytest>=8.3,<10",
+    "pytest-cov>=6,<8",
+    "ruff>=0.9,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pintos_utils"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/pintos_utils/py.typed" = "pintos_utils/py.typed"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/README.md",
+    "/docs",
+    "/pyproject.toml",
+    "/src",
+    "/tests",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+pythonpath = ["src", "tests/unit/email"]
+addopts = ["-ra"]
+
+[tool.coverage.run]
+branch = true
+source = ["pintos_utils"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+exclude = ["specs"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+strict = true
+warn_unreachable = true
+show_error_codes = true

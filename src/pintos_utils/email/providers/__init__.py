@@ -1,0 +1,1 @@
+"""Optional email provider implementations."""
