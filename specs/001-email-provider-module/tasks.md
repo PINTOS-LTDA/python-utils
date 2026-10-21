@@ -72,9 +72,14 @@ Gmail extra.
 
 - [X] T015 Document local, editable, and private SSH Git installation, OAuth ownership, public API, and error semantics in `docs/email.md` and `README.md`.
 - [ ] T016 Verify wheel and source distribution contents, clean local/editable installs, and an authorized pinned Git install with the Gmail extra against `pyproject.toml`, `uv.lock`, and `specs/001-email-provider-module/quickstart.md`.
-  Wheel and sdist contents, clean local and editable installs, Gmail-extra imports,
-  and a pinned local Git fixture passed. The configured private remote has no
-  refs, so a private pinned install remains unverified.
+  Wheel and sdist contents, clean local-wheel and editable installs, Gmail-extra
+  imports, and a pinned local Git fixture passed. The pushed private remote now
+  exposes commit `8676c28bbf9b174691cb9e7909e1b636ba942a28`, but a pinned install
+  from its SSH URL could not be verified here: OpenSSH rejects the host-wide
+  `/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf` because it is world-writable
+  (mode 777), and bypassing that config cannot resolve `github.com` in this
+  environment. Keep T016 open until the private Git install is verified from an
+  environment with working SSH access.
 
 ## Final Phase: Quality and Release Readiness
 
@@ -111,3 +116,14 @@ Gmail extra.
 No task requires a live Gmail account or network access. The private Git install
 check requires repository access only when exercised in the consuming
 environment.
+
+## Phase 6: Convergence
+
+- [ ] T020 Validate the published private Git install at a full commit SHA with the Gmail extra in a clean Python 3.11+ consumer environment, then record evidence needed to complete T016 per SC-004 (partial).
+  Retried on 2026-10-21 with a clean Python 3.11.17 virtual environment and
+  `UV_CACHE_DIR` under `/tmp`. The remote branch is reachable and points to the
+  pinned SHA, but `uv pip install` over SSH still stops because OpenSSH rejects
+  the world-writable host config above. Setting `GIT_SSH_COMMAND='ssh -F /dev/null'`
+  bypasses that file but then fails DNS resolution for `github.com`. T020 and
+  T016 remain open until the pinned install and Gmail imports pass in an
+  environment with working SSH and DNS.
