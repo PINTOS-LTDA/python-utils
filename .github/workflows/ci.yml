@@ -1,0 +1,15 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Shared quality gate
+    uses: ./.github/workflows/_quality.yml

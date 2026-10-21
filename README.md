@@ -5,6 +5,20 @@ independent and keeps provider-specific integrations optional.
 
 ## Installation
 
+Install the published base package from PyPI:
+
+```bash
+python -m pip install pintos-utils
+uv add pintos-utils
+```
+
+For Gmail support and its optional Google dependencies:
+
+```bash
+python -m pip install "pintos-utils[gmail]"
+uv add "pintos-utils[gmail]"
+```
+
 Install the base package from a local checkout:
 
 ```bash

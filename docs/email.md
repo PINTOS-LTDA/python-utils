@@ -7,6 +7,20 @@ code that builds messages.
 
 ## Installation
 
+Install the published base package from PyPI:
+
+```bash
+python -m pip install pintos-utils
+uv add pintos-utils
+```
+
+For Gmail support, request the optional extra:
+
+```bash
+python -m pip install "pintos-utils[gmail]"
+uv add "pintos-utils[gmail]"
+```
+
 Install the base package from a checkout with pip or uv:
 
 ```bash

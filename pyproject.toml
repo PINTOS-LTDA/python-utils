@@ -8,7 +8,12 @@ version = "1.0.0"
 description = "Reusable, provider-neutral utilities for Python applications."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = []
+
+[project.urls]
+Source = "https://github.com/PINTOS-LTDA/python-utils"
 
 [project.optional-dependencies]
 gmail = [
@@ -33,6 +38,7 @@ packages = ["src/pintos_utils"]
 
 [tool.hatch.build.targets.sdist]
 include = [
+    "/LICENSE",
     "/README.md",
     "/docs",
     "/pyproject.toml",
@@ -42,7 +48,7 @@ include = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
-pythonpath = ["src", "tests/unit/email"]
+pythonpath = ["src", "tests/unit/email", "scripts"]
 addopts = ["-ra"]
 
 [tool.coverage.run]

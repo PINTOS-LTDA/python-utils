@@ -1,0 +1,76 @@
+name: Release to PyPI
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: pypi-release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release:
+    name: Validate stable release tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the release tag revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Reject prereleases and malformed tags
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+            echo "Prerelease releases are not eligible for PyPI publication." >&2
+            exit 1
+          fi
+
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release tag must use stable vMAJOR.MINOR.PATCH format." >&2
+            exit 1
+          fi
+
+      - name: Set up Python for release preflight
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Compare project version and check PyPI version endpoint
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: python scripts/release_preflight.py "$RELEASE_TAG"
+
+  quality:
+    name: Test and build the tagged revision
+    needs: validate-release
+    uses: ./.github/workflows/_quality.yml
+    with:
+      ref: ${{ github.event.release.tag_name }}
+      upload_dist: true
+
+  publish:
+    name: Publish distributions to PyPI
+    needs: [validate-release, quality]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download validated distributions
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Publish distributions with Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          attestations: true
