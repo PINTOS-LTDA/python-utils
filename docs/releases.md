@@ -68,7 +68,7 @@ uv run pytest tests/unit/test_release_preflight.py
 uv build --no-sources
 ```
 
-Inspect the wheel and sdist. Both must report package `pintos-utils`, the same version, Python `>=3.11`, the `gmail` extra, the source URL, MIT license metadata, and the `LICENSE` file. Confirm there is exactly one expected wheel and one sdist. Do not treat a successful local build as authorization to publish.
+Inspect the wheel and sdist. Both must report package `pintos-utils`, the same version, Python `>=3.11`, the `gmail` and `mysql` extras with their declared dependencies, the source URL, MIT license metadata, and the `LICENSE` file. Confirm there is exactly one expected wheel and one sdist. Do not treat a successful local build as authorization to publish.
 
 ## Publisher Approval and Rejection Check
 

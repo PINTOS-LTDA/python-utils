@@ -1,3 +1,1 @@
-{
-  "feature_directory": "specs/002-pypi-trusted-publishing"
-}
+{"feature_directory":"specs/003-sql-script-execution"}

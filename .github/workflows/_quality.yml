@@ -38,8 +38,8 @@ jobs:
           version: "0.13.4"
           enable-cache: true
 
-      - name: Install locked development and Gmail dependencies
-        run: uv sync --locked --group dev --extra gmail
+      - name: Install locked development, Gmail, and MySQL dependencies
+        run: uv sync --locked --group dev --extra gmail --extra mysql
 
       - name: Run unit tests with coverage
         run: uv run pytest --cov=pintos_utils --cov-report=term-missing
@@ -89,9 +89,16 @@ jobs:
               )
 
           license_text = (root / "LICENSE").read_bytes()
-          expected_gmail = {
-              re.sub(r"[-_.]+", "-", re.match(r"[A-Za-z0-9_.-]+", requirement)[0]).lower()
-              for requirement in project["optional-dependencies"]["gmail"]
+          expected_optional_dependencies = {
+              extra: {
+                  re.sub(
+                      r"[-_.]+",
+                      "-",
+                      re.match(r"[A-Za-z0-9_.-]+", requirement)[0],
+                  ).lower()
+                  for requirement in requirements
+              }
+              for extra, requirements in project["optional-dependencies"].items()
           }
 
           def check_metadata(label: str, data: bytes) -> None:
@@ -106,16 +113,21 @@ jobs:
                   raise SystemExit(f"{label}: MIT License-Expression metadata is missing")
               if "LICENSE" not in (metadata.get_all("License-File") or []):
                   raise SystemExit(f"{label}: LICENSE is absent from License-File metadata")
-              if "gmail" not in (metadata.get_all("Provides-Extra") or []):
-                  raise SystemExit(f"{label}: Gmail extra metadata is missing")
-              actual_gmail = {
-                  re.sub(r"[-_.]+", "-", match.group(1)).lower()
-                  for value in metadata.get_all("Requires-Dist") or []
-                  if "extra == 'gmail'" in value or 'extra == "gmail"' in value
-                  if (match := re.match(r"\s*([A-Za-z0-9_.-]+)", value))
-              }
-              if actual_gmail != expected_gmail:
-                  raise SystemExit(f"{label}: Gmail dependencies do not match pyproject.toml")
+              provided_extras = set(metadata.get_all("Provides-Extra") or [])
+              if provided_extras != set(expected_optional_dependencies):
+                  raise SystemExit(f"{label}: optional extra metadata does not match pyproject.toml")
+              for extra, expected_names in expected_optional_dependencies.items():
+                  actual_names = {
+                      re.sub(r"[-_.]+", "-", match.group(1)).lower()
+                      for value in metadata.get_all("Requires-Dist") or []
+                      if f"extra == '{extra}'" in value
+                      or f'extra == "{extra}"' in value
+                      if (match := re.match(r"\s*([A-Za-z0-9_.-]+)", value))
+                  }
+                  if actual_names != expected_names:
+                      raise SystemExit(
+                          f"{label}: {extra} dependencies do not match pyproject.toml"
+                      )
               if not any(
                   item.startswith("Source, https://github.com/PINTOS-LTDA/python-utils")
                   for item in metadata.get_all("Project-URL") or []

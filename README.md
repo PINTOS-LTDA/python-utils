@@ -19,6 +19,13 @@ python -m pip install "pintos-utils[gmail]"
 uv add "pintos-utils[gmail]"
 ```
 
+For MySQL SQL script execution and its optional driver/parser dependencies:
+
+```bash
+python -m pip install "pintos-utils[mysql]"
+uv add "pintos-utils[mysql]"
+```
+
 Install the base package from a local checkout:
 
 ```bash
@@ -44,6 +51,11 @@ using the consuming environment; do not put credentials in the Git URL.
 
 See [docs/email.md](docs/email.md) for the provider-neutral API, Gmail OAuth
 ownership, error behavior, and installation examples.
+
+## Database module
+
+See [docs/database.md](docs/database.md) for MySQL script execution, named
+parameter binding, transaction ownership, and supported SQL limitations.
 
 ## Development
 
