@@ -25,6 +25,7 @@ mysql = [
     "mysql-connector-python>=9.2,<10",
     "sqlparse>=0.5,<1",
 ]
+polars = ["polars>=1.0,<3"]
 
 [dependency-groups]
 dev = [

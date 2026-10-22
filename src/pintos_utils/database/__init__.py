@@ -1,7 +1,21 @@
-"""Optional helpers for executing scripts through a MySQL connection."""
+"""Optional helpers for database scripts and Polars DataFrame operations."""
 
-from pintos_utils.database.exceptions import SqlScriptError
-from pintos_utils.database.models import SqlScriptResult
+from pintos_utils.database.dataframe import import_dataframe, query_dataframe
+from pintos_utils.database.exceptions import DataFrameDatabaseError, SqlScriptError
+from pintos_utils.database.models import (
+    DataFrameImportResult,
+    ImportMode,
+    SqlScriptResult,
+)
 from pintos_utils.database.sql_script_executor import SqlScriptExecutor
 
-__all__ = ["SqlScriptError", "SqlScriptExecutor", "SqlScriptResult"]
+__all__ = [
+    "DataFrameDatabaseError",
+    "DataFrameImportResult",
+    "ImportMode",
+    "SqlScriptError",
+    "SqlScriptExecutor",
+    "SqlScriptResult",
+    "import_dataframe",
+    "query_dataframe",
+]

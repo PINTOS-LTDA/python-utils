@@ -38,8 +38,8 @@ jobs:
           version: "0.13.4"
           enable-cache: true
 
-      - name: Install locked development, Gmail, and MySQL dependencies
-        run: uv sync --locked --group dev --extra gmail --extra mysql
+      - name: Install locked development, Gmail, MySQL, and Polars dependencies
+        run: uv sync --locked --group dev --extra gmail --extra mysql --extra polars
 
       - name: Run unit tests with coverage
         run: uv run pytest --cov=pintos_utils --cov-report=term-missing

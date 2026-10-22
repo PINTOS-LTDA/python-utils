@@ -173,6 +173,150 @@ The module uses Python's standard `logging` logger and does not configure the
 consuming application's logging system. DEBUG records report execution progress
 and durations without logging SQL text or parameter values.
 
+## Polars DataFrame operations
+
+Install both database and Polars support to query into a DataFrame or import a
+DataFrame into MySQL:
+
+```bash
+python -m pip install "pintos-utils[mysql,polars]"
+uv pip install -e ".[mysql,polars]"
+```
+
+Polars remains an optional dependency. The base package, `pintos_utils.database`,
+the SQL script executor, and provider-neutral email APIs can be imported without
+Polars. Calling a DataFrame operation without either optional dependency raises
+`DataFrameDatabaseError` with the installation command.
+
+The application creates and owns the MySQL connection. The public DataFrame API
+is exported from `pintos_utils.database`:
+
+```python
+from pintos_utils.database import (
+    DataFrameDatabaseError,
+    DataFrameImportResult,
+    ImportMode,
+    import_dataframe,
+    query_dataframe,
+)
+```
+
+### Query SQL into a DataFrame
+
+```python
+products = query_dataframe(
+    connection,
+    "SELECT sku, quantity FROM products WHERE store_id = :store_id",
+    params={"store_id": 18},
+)
+```
+
+`query_dataframe(connection, query, params=None)` executes one supported,
+parameterized statement in the supplied session and returns an eager
+`polars.DataFrame` with one complete result set. It uses `:name` markers and
+passes values separately to Connector/Python. Empty results preserve column
+names and order; their dtypes are not guaranteed. Results are fully materialized
+in memory.
+
+Each query call rejects an already-active caller transaction, starts its own
+transaction, and commits once after the frame and cursor have been materialized
+and cleaned up. It attempts rollback on execution, conversion, additional-result
+set, cursor-cleanup, or commit errors. It never closes the supplied connection
+or changes `autocommit`. Statements with transaction controls, implicit-commit
+forms, stored procedure calls, executable comments, or multiple statements are
+rejected before execution. A statement that returns no rows is rolled back and
+reported as an error. A single statement may change data and return rows, for
+example by calling a data-changing MySQL stored function from `SELECT`. In that
+case, the consumer must ensure side effects use transactional tables in the
+same connection. Nontransactional-table and external side effects are outside
+the rollback guarantee.
+
+### Import with `APPEND`
+
+Select `APPEND` explicitly to insert rows into an existing transactional table:
+
+```python
+import polars as pl
+
+from pintos_utils.database import ImportMode, import_dataframe
+
+incoming = pl.DataFrame({"sku": ["A-100", "B-200"], "quantity": [12, 7]})
+result = import_dataframe(
+    connection,
+    incoming,
+    "products",
+    mode=ImportMode.APPEND,
+    batch_size=1000,
+)
+print(result.rows_processed, result.batches_processed)
+```
+
+Each bounded batch uses parameterized `executemany` calls inside one transaction.
+The operation commits once after all batches succeed. A failed batch rolls back
+the full import. An empty DataFrame is a no-op and opens no transaction.
+
+### Import with `UPSERT`
+
+Select `UPSERT` and provide the complete key columns backed by one primary or
+unique index on the target:
+
+```python
+updates = pl.DataFrame({"sku": ["A-100", "C-300"], "quantity": [15, 4]})
+result = import_dataframe(
+    connection,
+    updates,
+    "products",
+    mode=ImportMode.UPSERT,
+    key_columns=["sku"],
+)
+```
+
+The source key tuples must be non-null and unique under the target key columns'
+comparison and collation rules. Matching rows receive the supplied non-key
+values; unmatched rows are inserted. A frame containing only key columns leaves
+matched rows unchanged. Rows are loaded in bounded batches into a session
+temporary table, then reconciled by the selected key. The
+temporary table is dropped before commit. A conflict on another unique target
+index fails and rolls back rather than updating a different row. The API does
+not retry concurrency conflicts.
+
+`table_name` must be an unqualified name for an existing base table in the
+connection's selected schema. Imports do not create or alter the target table
+and require an engine that supports transactions. Source columns map by name;
+unknown or generated target columns are rejected, while omitted target columns
+use their database defaults and constraints. `APPEND` does not accept key
+columns. `batch_size` must be a positive non-boolean integer.
+
+### Lossless conversion and errors
+
+The initial scalar conversion policy supports checked integers, booleans,
+finite floats, exact `Decimal` precision and scale, strings, binary values,
+`Date`, naive microsecond-precision `Datetime`, and `Time`, provided the target
+column type and range are compatible. It rejects nested/object/duration values,
+timezone-aware datetimes, sub-microsecond temporal values, incompatible target
+types, range overflow, and character or byte truncation before row writes.
+MySQL constraints and defaults remain authoritative for foreign keys, checks,
+and omitted columns.
+
+`DataFrameImportResult` reports `rows_processed` and `batches_processed`;
+it does not estimate inserted versus updated rows. `DataFrameDatabaseError`
+provides the operation name and, when available, `original_exception` and
+`cleanup_exception`. Error messages and default logs omit bound values and row
+contents.
+
+### Compatibility review
+
+The feature adds `query_dataframe`, `import_dataframe`, `ImportMode`,
+`DataFrameImportResult`, and `DataFrameDatabaseError` without changing the
+existing SQL script API. This is an additive public API change and requires a
+compatible minor release under the project's Semantic Versioning policy.
+
+The implementation uses MySQL `INFORMATION_SCHEMA`, transactional engines, and
+session temporary tables. No disposable MySQL integration server was configured
+for this implementation run, so a tested server version has not yet been
+recorded. The opt-in integration tests below remain the release verification
+path for a supported deployment.
+
 ## Optional MySQL integration tests
 
 Unit tests use fakes and do not need a server. The integration tests are opt-in
@@ -193,6 +337,13 @@ Then run:
 
 ```bash
 uv run --extra mysql pytest tests/integration/database/test_sql_script_executor_mysql.py
+```
+
+The Polars query and import acceptance tests use the same environment variables
+and disposable-database guard:
+
+```bash
+uv run --extra mysql --extra polars pytest tests/integration/database/test_dataframe_mysql.py
 ```
 
 Never point these tests at a corporate or production database. The tests create
