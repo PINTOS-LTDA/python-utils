@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pintos-utils"
-version = "1.1.0"
+version = "1.2.0"
 description = "Reusable, provider-neutral utilities for Python applications."
 readme = "README.md"
 requires-python = ">=3.11"
