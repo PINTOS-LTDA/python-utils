@@ -25,7 +25,7 @@ mysql = [
     "mysql-connector-python>=9.2,<10",
     "sqlparse>=0.5,<1",
 ]
-polars = ["polars>=1.0,<3"]
+polars = ["polars>=1.0,<3", "xlsxwriter>=3.0.8,<4"]
 
 [dependency-groups]
 dev = [

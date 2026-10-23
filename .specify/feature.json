@@ -1,1 +1,3 @@
-{"feature_directory":"specs/005-sql-script-polars"}
+{
+  "feature_directory": "specs/006-polars-excel-export"
+}

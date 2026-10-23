@@ -12,26 +12,29 @@ def test_polars_is_an_optional_extra_and_not_a_base_dependency() -> None:
     project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
 
     assert "polars" not in " ".join(project["dependencies"]).lower()
-    assert project["optional-dependencies"]["polars"] == ["polars>=1.0,<3"]
+    assert project["optional-dependencies"]["polars"] == [
+        "polars>=1.0,<3",
+        "xlsxwriter>=3.0.8,<4",
+    ]
     assert "--extra polars" in Path(".github/workflows/_quality.yml").read_text()
 
 
-def test_base_and_existing_imports_work_when_polars_cannot_be_imported() -> None:
+def test_base_and_existing_imports_work_without_spreadsheet_extras() -> None:
     script = r"""
 import builtins
 import importlib
 original_import = builtins.__import__
-def without_polars(name, *args, **kwargs):
-    if name == "polars" or name.startswith("polars."):
-        raise ModuleNotFoundError("blocked optional polars dependency")
+def without_spreadsheet_extras(name, *args, **kwargs):
+    if name == "polars" or name.startswith("polars.") or name == "xlsxwriter":
+        raise ModuleNotFoundError("blocked optional spreadsheet dependency")
     return original_import(name, *args, **kwargs)
-builtins.__import__ = without_polars
+builtins.__import__ = without_spreadsheet_extras
 original_import_module = importlib.import_module
-def without_polars_module(name, package=None):
-    if name == "polars" or name.startswith("polars."):
-        raise ModuleNotFoundError("blocked optional polars dependency")
+def without_spreadsheet_extra_module(name, package=None):
+    if name == "polars" or name.startswith("polars.") or name == "xlsxwriter":
+        raise ModuleNotFoundError("blocked optional spreadsheet dependency")
     return original_import_module(name, package)
-importlib.import_module = without_polars_module
+importlib.import_module = without_spreadsheet_extra_module
 
 from pintos_utils.database import (
     DataFrameDatabaseError,

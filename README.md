@@ -18,6 +18,7 @@ Instale somente o que sua aplicação usa:
 | Adaptador Gmail | `python -m pip install "pintos-utils[gmail]"` | `GmailEmailSender` |
 | Scripts SQL MySQL | `python -m pip install "pintos-utils[mysql]"` | `SqlScriptExecutor` |
 | Converter resultados para Polars | `python -m pip install "pintos-utils[polars]"` | `sql_script_result_to_dataframe` |
+| Exportar Polars para Excel | `python -m pip install "pintos-utils[polars]"` | `exportar_excel`, `exportar_excel_bytes` |
 | SQL, consultas/importações Polars + MySQL | `python -m pip install "pintos-utils[mysql,polars]"` | `execute_dataframe`, `execute_file_dataframe`, `query_dataframe`, `import_dataframe` |
 
 O pacote base não instala dependências de runtime. A API de email pode ser
@@ -31,6 +32,7 @@ as operações que usam essas integrações exigem os extras correspondentes.
 | `pintos_utils.email` | `EmailAddress`, `EmailAttachment`, `EmailMessage`, `EmailSender`, `SendResult`, `EmailError`, `EmailValidationError`, `EmailConfigurationError`, `EmailAuthenticationError`, `EmailProviderError` |
 | `pintos_utils.email.providers.gmail` | `GmailEmailSender`, `GMAIL_SEND_SCOPE` |
 | `pintos_utils.database` | `SqlScriptExecutor`, `SqlScriptResult`, `SqlScriptError`, `sql_script_result_to_dataframe`, `query_dataframe`, `import_dataframe`, `ImportMode`, `DataFrameImportResult`, `DataFrameDatabaseError` |
+| `pintos_utils.polars_excel` | `exportar_excel`, `exportar_excel_bytes` |
 
 ### Cartão: instalar com uv
 
@@ -647,6 +649,78 @@ mensagens e logs padrão não incluem valores vinculados nem linhas.
 
 Para detalhes sobre transações, conversões e limitações, consulte o [guia de
 operações de banco de dados](docs/database.md).
+
+## Exportação de DataFrames Polars para Excel
+
+Instale o extra `polars` para habilitar as duas funções de exportação; a
+instalação base continua sem dependências de runtime:
+
+```bash
+python -m pip install "pintos-utils[polars]"
+```
+
+| API | Assinatura |
+| --- | --- |
+| `exportar_excel` | `exportar_excel(df, arquivo, aba="Dados") -> None` |
+| `exportar_excel_bytes` | `exportar_excel_bytes(df, aba="Dados") -> bytes` |
+
+### Cartão: salvar um DataFrame em arquivo Excel
+
+**Quando usar:** para criar ou substituir um arquivo `.xlsx` no caminho escolhido.
+
+```python
+from pathlib import Path
+
+import polars as pl
+
+from pintos_utils.polars_excel import exportar_excel
+
+relatorio = pl.DataFrame(
+    {
+        "produto": ["Café", "Chá"],
+        "quantidade": [12, 7],
+    }
+)
+
+exportar_excel(relatorio, Path("relatorio.xlsx"))
+exportar_excel(relatorio, "resumo.xlsx", aba="Resumo")
+```
+
+**Resultado:** o primeiro workbook usa a planilha `Dados`; o segundo usa
+`Resumo`. Cada workbook contém uma planilha e preserva a ordem das colunas e
+linhas.
+
+**Notas:** datas usam `dd/mm/yyyy`, data e hora usam
+`dd/mm/yyyy hh:mm:ss`, horas usam `hh:mm:ss`, inteiros usam `#,##0` e floats e
+decimais usam `#,##0.00`. A planilha aplica o estilo de tabela Medium 2,
+dimensiona colunas pelo conteúdo, inclui filtros, congela a primeira linha e
+oculta as linhas de grade. Um DataFrame sem colunas gera uma planilha vazia sem
+tabela sintética.
+
+### Cartão: obter um workbook Excel como bytes
+
+**Quando usar:** para enviar o workbook a outro componente sem gravar primeiro
+um arquivo temporário.
+
+```python
+import polars as pl
+
+from pintos_utils.polars_excel import exportar_excel_bytes
+
+relatorio = pl.DataFrame({"produto": ["Café"], "quantidade": [12]})
+payload = exportar_excel_bytes(relatorio, aba="Resumo")
+
+print(type(payload).__name__, len(payload))
+```
+
+**Saída esperada:** `bytes` contendo um arquivo `.xlsx` completo com a planilha
+`Resumo`. O workbook é finalizado antes de os bytes serem retornados, e a
+operação não cria arquivo no disco.
+
+**Erros:** destinos que não podem ser gravados, nomes inválidos de planilha e
+valores não suportados pelo writer geram exceções observáveis. A exportação não
+descarta dados silenciosamente. Nenhuma das funções modifica o DataFrame de
+entrada.
 
 ## Desenvolvimento do pacote
 
