@@ -97,6 +97,15 @@ External setup review on 2026-10-21:
 - PyPI verified provenance for each file. Both attestations identify GitHub Actions, repository `PINTOS-LTDA/python-utils`, commit `34b82fa8dff0427741f112b06a9f577d910ed1f1`, workflow `.github/workflows/release.yml`, and run `39809450687`. The published file hashes match both the reviewed workflow artifact and the local build.
 - Clean CPython 3.11.17 environments installed the base package, `pintos-utils[gmail]==1.2.0`, and `pintos-utils[mysql,polars]==1.2.0` from the official PyPI index. Imports for the base email API, Gmail sender, MySQL connector, Polars, `query_dataframe`, and `import_dataframe` passed; `uv pip check` passed in all three environments. No live MySQL operation was run.
 
+### Authorized publication and consumer validation (2026-10-23, v1.3.0)
+
+- GitHub [release `v1.3.0`](https://github.com/PINTOS-LTDA/python-utils/releases/tag/v1.3.0) was published from commit `2b2d2837d2052cdabf2cebf379506778c8c95ab9`. [Workflow run 39981097185](https://github.com/PINTOS-LTDA/python-utils/actions/runs/39981097185) passed stable-tag validation, the tagged-revision quality/build job, and `Publish distributions to PyPI`. `ivaneyvieira` approved the protected `pypi` environment. The workflow artifact `12512778894` is 91.4 KB with archive digest `sha256:ede20bf7f7c0c0cb6a2a8c2a7187b63148e11e70248750407d18b457e1f2c45d`.
+- PyPI serves [pintos-utils 1.3.0](https://pypi.org/project/pintos-utils/1.3.0/) with exactly two files:
+  - Wheel `pintos_utils-1.3.0-py3-none-any.whl`, 33,548 bytes, SHA-256 `730f32688a23fbecb05fbbc5831a5f3a8d3a529209164f82eadfebecd8d30216`.
+  - Sdist `pintos_utils-1.3.0.tar.gz`, 61,880 bytes, SHA-256 `5ffaf88daf47c384a206e1d71fcf4413aebfe73d6e9b22c0c619467ac2bf6c9a`.
+- Both files report package `pintos-utils`, version `1.3.0`, Python `>=3.11`, source `https://github.com/PINTOS-LTDA/python-utils`, MIT license metadata, and extras `gmail`, `mysql`, and `polars`. PyPI's Integrity API provenance was cryptographically verified with `pypi-attestations verify pypi --repository https://github.com/PINTOS-LTDA/python-utils <artifact-url>`; both files returned `OK`. Their statements contain the listed SHA-256 digests, and both signer certificates identify `PINTOS-LTDA/python-utils`, `.github/workflows/release.yml`, and `refs/tags/v1.3.0`; PyPI reports the `pypi` environment.
+- Clean CPython 3.14.8 environments installed `pintos-utils==1.3.0`, `pintos-utils[gmail]==1.3.0`, and `pintos-utils[mysql,polars]==1.3.0` separately from the official PyPI index. Base package and email model imports, `GmailEmailSender`, and the MySQL/Polars imports (`SqlScriptExecutor` and `sql_script_result_to_dataframe`) passed; `uv pip check` passed in all three environments. No live MySQL operation was run.
+
 The release-preflight unit tests use mocked HTTP responses and make no network requests. They verify that an existing version blocks release, a version-specific 404 means only that the queried version was not found, and network/API failures stop the preflight. They do not claim to verify project-name availability or PyPI ownership.
 
 ### Release gate scenarios (no upload)
