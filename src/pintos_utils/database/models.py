@@ -13,11 +13,14 @@ class SqlScriptResult:
 
     ``rows`` contains the last result set produced by the script. Rows are
     materialized in memory, so this model is not intended for unbounded results.
+    ``columns`` retains the ordered schema of that result set, including when
+    the result has no rows.
     """
 
     statements_executed: int = 0
     rows: list[dict[str, Any]] = field(default_factory=list)
     affected_rows: int = 0
+    columns: list[str] = field(default_factory=list)
 
 
 class ImportMode(StrEnum):

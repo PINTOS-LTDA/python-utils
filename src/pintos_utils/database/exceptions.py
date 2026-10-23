@@ -34,7 +34,7 @@ class DataFrameDatabaseError(Exception):
         self,
         message: str,
         *,
-        operation: Literal["query", "import"],
+        operation: Literal["query", "import", "convert"],
         original_exception: BaseException | None = None,
         cleanup_exception: BaseException | None = None,
     ) -> None:

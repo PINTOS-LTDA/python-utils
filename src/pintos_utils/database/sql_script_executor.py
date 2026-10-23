@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import time
 from collections.abc import Mapping
@@ -9,10 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from pintos_utils.database.exceptions import SqlScriptError
+from pintos_utils.database.dataframe import sql_script_result_to_dataframe
+from pintos_utils.database.exceptions import DataFrameDatabaseError, SqlScriptError
 from pintos_utils.database.models import SqlScriptResult
 
 if TYPE_CHECKING:
+    import polars as pl
     from mysql.connector.connection import MySQLConnection as _MySQLConnection
 else:
     _MySQLConnection = Any
@@ -159,6 +162,8 @@ class SqlScriptExecutor:
                     if cursor.with_rows:
                         fetched_rows = cast(Any, cursor.fetchall())
                         result.rows = [dict(row) for row in fetched_rows]
+                        description = cursor.description or ()
+                        result.columns = [str(column[0]) for column in description]
 
                     rowcount = cursor.rowcount
                     if (
@@ -222,6 +227,45 @@ class SqlScriptExecutor:
         )
         return result
 
+    def execute_dataframe(
+        self,
+        script: str,
+        params: Mapping[str, Any] | None = None,
+        commit: bool = False,
+    ) -> pl.DataFrame:
+        """Execute a SQL script and return its last result set as a Polars frame."""
+        _require_script_polars()
+        has_sql = isinstance(script, str) and _lex_sql(script).has_sql
+        if commit and has_sql:
+            self._ensure_no_active_transaction()
+
+        result = self.execute(script, params=params, commit=False)
+        try:
+            dataframe = sql_script_result_to_dataframe(result)
+        except DataFrameDatabaseError as error:
+            cleanup_error: BaseException | None = None
+            if commit and result.statements_executed:
+                try:
+                    self._connection.rollback()
+                except BaseException as rollback_error:
+                    cleanup_error = rollback_error
+            raise DataFrameDatabaseError(
+                str(error),
+                operation="convert",
+                original_exception=error.original_exception or error,
+                cleanup_exception=cleanup_error,
+            ) from error
+
+        if commit and result.statements_executed:
+            try:
+                self._connection.commit()
+            except Exception as error:
+                _LOGGER.debug("Unable to commit the SQL script")
+                raise SqlScriptError(
+                    "Unable to commit the SQL script", original_exception=error
+                ) from error
+        return dataframe
+
     def execute_file(
         self,
         file_path: str | Path,
@@ -239,6 +283,53 @@ class SqlScriptExecutor:
                 original_exception=error,
             ) from error
         return self.execute(script, params=params, commit=commit)
+
+    def execute_file_dataframe(
+        self,
+        file_path: str | Path,
+        params: Mapping[str, Any] | None = None,
+        commit: bool = False,
+        encoding: str = "utf-8",
+    ) -> pl.DataFrame:
+        """Read a SQL file and return its last result set as a Polars frame."""
+        _require_script_polars()
+        try:
+            script = Path(file_path).read_text(encoding=encoding)
+        except (OSError, UnicodeError, LookupError) as error:
+            _LOGGER.debug("Unable to read SQL script file")
+            raise SqlScriptError(
+                f"Unable to read SQL script file: {file_path}",
+                original_exception=error,
+            ) from error
+        return self.execute_dataframe(script, params=params, commit=commit)
+
+    def _ensure_no_active_transaction(self) -> None:
+        try:
+            if self._connection.in_transaction:
+                _LOGGER.debug("SQL script rejected because a transaction is active")
+                raise SqlScriptError(
+                    "Cannot execute with commit=True while a transaction is active"
+                )
+        except SqlScriptError:
+            raise
+        except Exception as error:
+            _LOGGER.debug("Unable to inspect the MySQL transaction state")
+            raise SqlScriptError(
+                "Unable to inspect the MySQL transaction state",
+                original_exception=error,
+            ) from error
+
+
+def _require_script_polars() -> None:
+    """Check the optional dependency before SQL execution begins."""
+    try:
+        importlib.import_module("polars")
+    except ImportError as error:
+        raise DataFrameDatabaseError(
+            "SQL script DataFrame execution requires pintos-utils[mysql,polars]",
+            operation="convert",
+            original_exception=error,
+        ) from error
 
 
 def _split_sql(script: str) -> list[str]:

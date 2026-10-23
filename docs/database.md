@@ -101,6 +101,7 @@ large queries.
 
 - `statements_executed`: number of statements that completed successfully.
 - `rows`: rows from the last result-producing statement, or an empty list.
+- `columns`: ordered names from that result set, including when it has no rows.
 - `affected_rows`: sum of non-negative row counts reported for DML statements.
 
 ## Named values and safety
@@ -175,18 +176,22 @@ and durations without logging SQL text or parameter values.
 
 ## Polars DataFrame operations
 
-Install both database and Polars support to query into a DataFrame or import a
-DataFrame into MySQL:
+Install Polars to convert an existing `SqlScriptResult`. Install both database
+and Polars support to execute SQL directly into a DataFrame or import a frame
+into MySQL:
 
 ```bash
 python -m pip install "pintos-utils[mysql,polars]"
+python -m pip install "pintos-utils[polars]"
 uv pip install -e ".[mysql,polars]"
 ```
 
-Polars remains an optional dependency. The base package, `pintos_utils.database`,
-the SQL script executor, and provider-neutral email APIs can be imported without
-Polars. Calling a DataFrame operation without either optional dependency raises
-`DataFrameDatabaseError` with the installation command.
+Polars remains an optional dependency. The base package,
+`pintos_utils.database`, the SQL script executor, and provider-neutral email
+APIs can be imported without Polars. Calling the standalone converter without
+Polars raises `DataFrameDatabaseError` with the `[polars]` installation command.
+The SQL DataFrame executor methods require `[mysql,polars]` and check for Polars
+before sending SQL.
 
 The application creates and owns the MySQL connection. The public DataFrame API
 is exported from `pintos_utils.database`:
@@ -198,6 +203,7 @@ from pintos_utils.database import (
     ImportMode,
     import_dataframe,
     query_dataframe,
+    sql_script_result_to_dataframe,
 )
 ```
 
@@ -230,6 +236,69 @@ example by calling a data-changing MySQL stored function from `SELECT`. In that
 case, the consumer must ensure side effects use transactional tables in the
 same connection. Nontransactional-table and external side effects are outside
 the rollback guarantee.
+
+### Convert an existing SQL result
+
+Use the standalone converter when the caller needs the result counters from
+`execute()` as well as a DataFrame:
+
+```python
+from pintos_utils.database import sql_script_result_to_dataframe
+
+result = executor.execute("SELECT sku, quantity FROM products")
+frame = sql_script_result_to_dataframe(result)
+print(result.statements_executed, result.affected_rows)
+print(frame.shape, frame.columns)
+```
+
+The converter copies only `rows` and `columns`; execution counters are not added
+as DataFrame columns. Executor-created results retain ordered column names even
+when a query returns zero rows. That empty frame keeps its column names and
+order, but its dtypes are unspecified. A result with no rows and no known names
+becomes a zero-by-zero frame. For a manually created result with rows but no
+column metadata, the first row's key order defines the columns. Every row must
+have exactly the same keys. Unsupported or lossy values fail with
+`DataFrameDatabaseError(operation="convert")`; exception text and default logs
+do not expose row values. The supported scalar round-trip includes `None`,
+booleans, integers, floats (including NaN), strings, `Decimal`, dates, naive
+datetimes, `datetime.time`, `datetime.timedelta`, and bytes. Connector/Python
+returns MySQL `TIME` values as `datetime.timedelta`, including negative and
+over-24-hour durations.
+
+### Execute SQL directly into a DataFrame
+
+Use `execute_dataframe()` or `execute_file_dataframe()` when the DataFrame is
+the desired result and statement totals are not needed:
+
+```python
+frame = executor.execute_dataframe(
+    "SELECT sku, quantity FROM products WHERE store_id = :store_id",
+    params={"store_id": 18},
+    commit=True,
+)
+
+frame_from_file = executor.execute_file_dataframe(
+    "reports/replenishments.sql",
+    params={"store_id": 18},
+    encoding="utf-8",
+)
+```
+
+Both methods run the same sequential scripts and named binding as the existing
+executor, and return rows and ordered columns from the last result-producing
+statement. A later statement without rows does not erase that result. A script
+with no result set returns a zero-by-zero frame. These methods do not return
+`statements_executed` or `affected_rows`; use `execute()` or `execute_file()` and
+convert the result separately when those totals are needed.
+
+With `commit=True`, a non-empty script rejects an already-active transaction
+before SQL. The cursor is closed, the result is converted, and then the executor
+commits once. Empty or comment-only scripts remain no-ops and do not commit. If
+conversion fails, it attempts rollback and preserves any rollback failure in
+`DataFrameDatabaseError.cleanup_exception`. With `commit=False`, these methods
+do not commit or roll back, including when conversion fails. SQL, fetch, and
+cursor-close failures keep the existing executor behavior and do not add an
+automatic rollback. The caller still owns the connection.
 
 ### Import with `APPEND`
 
@@ -300,16 +369,18 @@ and omitted columns.
 
 `DataFrameImportResult` reports `rows_processed` and `batches_processed`;
 it does not estimate inserted versus updated rows. `DataFrameDatabaseError`
-provides the operation name and, when available, `original_exception` and
-`cleanup_exception`. Error messages and default logs omit bound values and row
-contents.
+uses the operation name `query`, `import`, or `convert`, and exposes
+`original_exception` and `cleanup_exception` when available. Error messages and
+default logs omit bound values and row contents.
 
 ### Compatibility review
 
-The feature adds `query_dataframe`, `import_dataframe`, `ImportMode`,
-`DataFrameImportResult`, and `DataFrameDatabaseError` without changing the
-existing SQL script API. This is an additive public API change and requires a
-compatible minor release under the project's Semantic Versioning policy.
+The feature adds `SqlScriptResult.columns`,
+`sql_script_result_to_dataframe`, `execute_dataframe`,
+`execute_file_dataframe`, and the `convert` error operation. Existing
+`SqlScriptResult` positional arguments retain their order, with `columns`
+appended as a defaulted field. The public API additions are compatible with a
+minor release under the project's Semantic Versioning policy.
 
 The implementation uses MySQL `INFORMATION_SCHEMA`, transactional engines, and
 session temporary tables. No disposable MySQL integration server was configured

@@ -100,6 +100,69 @@ assert ImportMode.UPSERT.value == "UPSERT"
     assert result.returncode == 0, result.stderr
 
 
+def test_new_polars_apis_fail_before_sql_without_polars() -> None:
+    script = r"""
+import builtins
+import importlib
+original_import = builtins.__import__
+def without_polars(name, *args, **kwargs):
+    if name == "polars" or name.startswith("polars."):
+        raise ModuleNotFoundError("blocked optional polars dependency")
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = without_polars
+original_import_module = importlib.import_module
+def without_polars_module(name, package=None):
+    if name == "polars" or name.startswith("polars."):
+        raise ModuleNotFoundError("blocked optional polars dependency")
+    return original_import_module(name, package)
+importlib.import_module = without_polars_module
+
+from pintos_utils.database import (
+    DataFrameDatabaseError,
+    SqlScriptExecutor,
+    SqlScriptResult,
+    sql_script_result_to_dataframe,
+)
+class Connection:
+    in_transaction = False
+    cursor_calls = 0
+    def cursor(self, **kwargs):
+        self.cursor_calls += 1
+        raise AssertionError("SQL must not be sent without Polars")
+
+try:
+    sql_script_result_to_dataframe(SqlScriptResult())
+except DataFrameDatabaseError as error:
+    assert error.operation == "convert"
+    assert "pintos-utils[polars]" in str(error)
+else:
+    raise AssertionError("the converter should report its missing extra")
+
+connection = Connection()
+executor = SqlScriptExecutor(connection)
+for operation in (
+    lambda: executor.execute_dataframe("SELECT 1"),
+    lambda: executor.execute_file_dataframe("not-read.sql"),
+):
+    try:
+        operation()
+    except DataFrameDatabaseError as error:
+        assert error.operation == "convert"
+        assert "pintos-utils[mysql,polars]" in str(error)
+    else:
+        raise AssertionError("the executor should report its missing extras")
+assert connection.cursor_calls == 0
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_dataframe_operation_names_missing_mysql_extra() -> None:
     script = r"""
 import builtins

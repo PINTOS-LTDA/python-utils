@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import get_args, get_type_hints
+
 from pintos_utils.database.exceptions import DataFrameDatabaseError
 
 
@@ -26,3 +28,13 @@ def test_dataframe_error_allows_missing_failure_context() -> None:
 
     assert error.original_exception is None
     assert error.cleanup_exception is None
+
+
+def test_dataframe_error_accepts_conversion_operation() -> None:
+    error = DataFrameDatabaseError("Unable to convert SQL result", operation="convert")
+    operation_type = get_type_hints(DataFrameDatabaseError.__init__)["operation"]
+
+    assert error.operation == "convert"
+    assert error.original_exception is None
+    assert error.cleanup_exception is None
+    assert set(get_args(operation_type)) == {"query", "import", "convert"}

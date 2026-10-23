@@ -1,6 +1,10 @@
 """Optional helpers for database scripts and Polars DataFrame operations."""
 
-from pintos_utils.database.dataframe import import_dataframe, query_dataframe
+from pintos_utils.database.dataframe import (
+    import_dataframe,
+    query_dataframe,
+    sql_script_result_to_dataframe,
+)
 from pintos_utils.database.exceptions import DataFrameDatabaseError, SqlScriptError
 from pintos_utils.database.models import (
     DataFrameImportResult,
@@ -18,4 +22,5 @@ __all__ = [
     "SqlScriptResult",
     "import_dataframe",
     "query_dataframe",
+    "sql_script_result_to_dataframe",
 ]

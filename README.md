@@ -17,7 +17,8 @@ Instale somente o que sua aplicação usa:
 | Modelos de email e contrato de envio | `python -m pip install pintos-utils` | `pintos_utils.email` |
 | Adaptador Gmail | `python -m pip install "pintos-utils[gmail]"` | `GmailEmailSender` |
 | Scripts SQL MySQL | `python -m pip install "pintos-utils[mysql]"` | `SqlScriptExecutor` |
-| Consultas/importações Polars + MySQL | `python -m pip install "pintos-utils[mysql,polars]"` | `query_dataframe`, `import_dataframe` |
+| Converter resultados para Polars | `python -m pip install "pintos-utils[polars]"` | `sql_script_result_to_dataframe` |
+| SQL, consultas/importações Polars + MySQL | `python -m pip install "pintos-utils[mysql,polars]"` | `execute_dataframe`, `execute_file_dataframe`, `query_dataframe`, `import_dataframe` |
 
 O pacote base não instala dependências de runtime. A API de email pode ser
 importada sem Google SDK; a API de banco pode ser importada sem o driver MySQL;
@@ -29,7 +30,7 @@ as operações que usam essas integrações exigem os extras correspondentes.
 | --- | --- |
 | `pintos_utils.email` | `EmailAddress`, `EmailAttachment`, `EmailMessage`, `EmailSender`, `SendResult`, `EmailError`, `EmailValidationError`, `EmailConfigurationError`, `EmailAuthenticationError`, `EmailProviderError` |
 | `pintos_utils.email.providers.gmail` | `GmailEmailSender`, `GMAIL_SEND_SCOPE` |
-| `pintos_utils.database` | `SqlScriptExecutor`, `SqlScriptResult`, `SqlScriptError`, `query_dataframe`, `import_dataframe`, `ImportMode`, `DataFrameImportResult`, `DataFrameDatabaseError` |
+| `pintos_utils.database` | `SqlScriptExecutor`, `SqlScriptResult`, `SqlScriptError`, `sql_script_result_to_dataframe`, `query_dataframe`, `import_dataframe`, `ImportMode`, `DataFrameImportResult`, `DataFrameDatabaseError` |
 
 ### Cartão: instalar com uv
 
@@ -268,6 +269,9 @@ fecha cursores, mas não fecha a conexão fornecida.
 | `SqlScriptExecutor` | `SqlScriptExecutor(connection)` |
 | `execute` | `execute(script, params=None, commit=False) -> SqlScriptResult` |
 | `execute_file` | `execute_file(file_path, params=None, commit=False, encoding="utf-8") -> SqlScriptResult` |
+| `execute_dataframe` | `execute_dataframe(script, params=None, commit=False) -> polars.DataFrame` |
+| `execute_file_dataframe` | `execute_file_dataframe(file_path, params=None, commit=False, encoding="utf-8") -> polars.DataFrame` |
+| `sql_script_result_to_dataframe` | `sql_script_result_to_dataframe(result) -> polars.DataFrame` |
 | `query_dataframe` | `query_dataframe(connection, query, params=None) -> polars.DataFrame` |
 | `import_dataframe` | `import_dataframe(connection, dataframe, table_name, *, mode, key_columns=None, batch_size=1000) -> DataFrameImportResult` |
 
@@ -384,8 +388,78 @@ print(result.rows)
 ```
 
 **Campos:** `statements_executed` conta comandos concluídos; `affected_rows`
-soma contagens não negativas de comandos DML; `rows` contém as linhas do último
-comando que produziu resultados. As linhas são materializadas em memória.
+soma contagens não negativas de comandos DML; `rows` e `columns` mantêm as
+linhas e nomes ordenados do último comando que produziu resultados. As linhas
+são materializadas em memória.
+
+### Cartão: converter o resultado SQL para Polars
+
+**Quando usar:** quando o código precisa das contagens de execução e também quer
+continuar o processamento dos dados com Polars.
+
+```python
+from pintos_utils.database import sql_script_result_to_dataframe
+
+result = executor.execute("SELECT sku, quantity FROM products")
+frame = sql_script_result_to_dataframe(result)
+
+print(result.affected_rows)
+print(frame.shape, frame.columns)
+```
+
+**Resultado:** `frame` contém somente as linhas e colunas do último resultado;
+`statements_executed` e `affected_rows` continuam no `SqlScriptResult`.
+
+**Notas:** instale `pintos-utils[polars]`. Colunas conhecidas são preservadas
+mesmo quando não há linhas, mas seus dtypes não são especificados. Para um
+resultado criado manualmente sem metadados, a ordem das chaves da primeira linha
+define as colunas. Linhas com chaves diferentes e valores que Polars não consiga
+representar fielmente geram `DataFrameDatabaseError` com `operation="convert"`.
+
+### Cartão: executar SQL e receber um DataFrame
+
+**Quando usar:** quando o resultado final do script é suficiente e as contagens
+de execução não são necessárias.
+
+```python
+frame = executor.execute_dataframe(
+    "SELECT sku, quantity FROM products WHERE store_id = :store_id",
+    params={"store_id": 18},
+    commit=True,
+)
+
+print(frame.shape)
+print(frame.head())
+```
+
+**Resultado:** um `polars.DataFrame` com as linhas e colunas ordenadas do último
+comando que produziu resultados. Um comando posterior sem linhas não apaga esse
+resultado. Um script sem conjunto de resultados devolve um DataFrame com shape
+`(0, 0)`.
+
+**Notas:** instale `pintos-utils[mysql,polars]`. Com `commit=True`, o executor
+converte o resultado antes do commit; scripts vazios ou só com comentários são
+no-op. Se a conversão falhar, tenta rollback e guarda uma falha de rollback em
+`cleanup_exception`. Com `commit=False`, não faz commit nem rollback. Falhas SQL,
+de leitura ou de fechamento do cursor mantêm o comportamento atual do executor
+e não adicionam rollback automático.
+
+### Cartão: executar um arquivo SQL para Polars
+
+**Quando usar:** para manter consultas versionadas em arquivos e receber um
+DataFrame sem materializar um `SqlScriptResult` na aplicação.
+
+```python
+frame = executor.execute_file_dataframe(
+    "reports/replenishments.sql",
+    params={"store_id": 18},
+    encoding="utf-8",
+)
+```
+
+**Resultado:** `execute_file_dataframe()` lê o arquivo com a codificação
+informada e aplica as mesmas regras de binding, seleção do último resultado e
+transação de `execute_dataframe()`.
 
 ### Cartão: tratar erros SQL
 
@@ -567,9 +641,9 @@ except DataFrameDatabaseError as error:
     print(error.cleanup_exception)
 ```
 
-`DataFrameDatabaseError.operation` será `query` ou `import`. Causas originais e
-falhas de limpeza ficam disponíveis nos atributos correspondentes; mensagens e
-logs padrão não incluem valores vinculados nem linhas.
+`DataFrameDatabaseError.operation` será `query`, `import` ou `convert`. Causas
+originais e falhas de limpeza ficam disponíveis nos atributos correspondentes;
+mensagens e logs padrão não incluem valores vinculados nem linhas.
 
 Para detalhes sobre transações, conversões e limitações, consulte o [guia de
 operações de banco de dados](docs/database.md).

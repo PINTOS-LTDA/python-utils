@@ -9,14 +9,18 @@ import re
 import struct
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
 
 from pintos_utils.database._sql import prepare_query
 from pintos_utils.database.exceptions import DataFrameDatabaseError
-from pintos_utils.database.models import DataFrameImportResult, ImportMode
+from pintos_utils.database.models import (
+    DataFrameImportResult,
+    ImportMode,
+    SqlScriptResult,
+)
 
 if TYPE_CHECKING:
     import polars as pl
@@ -44,6 +48,92 @@ _CHARACTER_TYPES = frozenset(
 _BINARY_TYPES = frozenset(
     {"binary", "varbinary", "tinyblob", "blob", "mediumblob", "longblob"}
 )
+
+
+def sql_script_result_to_dataframe(result: SqlScriptResult) -> pl.DataFrame:
+    """Convert a materialized SQL script result into an eager Polars frame.
+
+    Result rows and their schema are copied without adding execution metadata.
+    When the result has no rows, known column names are retained and their
+    Polars dtypes remain unspecified.
+    """
+    try:
+        polars = _require_polars("convert")
+        if not isinstance(result, SqlScriptResult):
+            raise TypeError("result must be a SqlScriptResult")
+
+        rows = result.rows
+        if result.columns:
+            columns = list(result.columns)
+        elif rows:
+            first_row = rows[0]
+            if not isinstance(first_row, Mapping):
+                raise TypeError("SQL script result rows must be mappings")
+            columns = list(first_row.keys())
+        else:
+            columns = []
+
+        if any(not isinstance(name, str) for name in columns):
+            raise ValueError("SQL script result column names must be strings")
+        if len(set(columns)) != len(columns):
+            raise ValueError("SQL script result column names must be unique")
+
+        for row in rows:
+            if not isinstance(row, Mapping):
+                raise TypeError("SQL script result rows must be mappings")
+            if set(row) != set(columns):
+                raise ValueError("SQL script result rows have inconsistent columns")
+        _validate_sql_script_scalar_values(rows, columns)
+
+        frame = polars.DataFrame(
+            rows,
+            schema=columns,
+            infer_schema_length=None,
+            strict=True,
+        )
+        _ensure_query_values_lossless(rows, frame)
+        return cast("pl.DataFrame", frame)
+    except DataFrameDatabaseError:
+        raise
+    except Exception as error:
+        _LOGGER.debug("SQL script result conversion failed")
+        raise DataFrameDatabaseError(
+            "Unable to convert SQL script result to a DataFrame",
+            operation="convert",
+            original_exception=error,
+        ) from error
+
+
+def _validate_sql_script_scalar_values(
+    rows: list[dict[str, Any]], columns: list[str]
+) -> None:
+    supported = (
+        bool,
+        int,
+        float,
+        str,
+        Decimal,
+        bytes,
+        bytearray,
+        memoryview,
+        timedelta,
+    )
+    for row in rows:
+        for name in columns:
+            value = row[name]
+            if value is None or isinstance(value, supported):
+                continue
+            if isinstance(value, datetime):
+                if value.tzinfo is not None and value.utcoffset() is not None:
+                    raise ValueError("Timezone-aware SQL result values are unsupported")
+                continue
+            if isinstance(value, date):
+                continue
+            if isinstance(value, time):
+                if value.tzinfo is not None and value.utcoffset() is not None:
+                    raise ValueError("Timezone-aware SQL result values are unsupported")
+                continue
+            raise TypeError("SQL result value type is unsupported for Polars")
 
 
 def query_dataframe(
@@ -902,7 +992,7 @@ def _quote_identifier(identifier: str) -> str:
 
 
 def _require_dependencies(operation: Literal["query", "import"]) -> Any:
-    """Load optional drivers only when a DataFrame operation is invoked."""
+    """Load optional drivers only when a database DataFrame operation is invoked."""
     try:
         importlib.import_module("mysql.connector")
     except ImportError as error:
@@ -911,11 +1001,19 @@ def _require_dependencies(operation: Literal["query", "import"]) -> Any:
             operation=operation,
             original_exception=error,
         ) from error
+    return _require_polars(operation)
+
+
+def _require_polars(
+    operation: Literal["query", "import", "convert"],
+) -> Any:
+    """Load Polars lazily and give the operation-specific installation extra."""
     try:
         return importlib.import_module("polars")
     except ImportError as error:
+        extra = "polars" if operation == "convert" else "mysql,polars"
         raise DataFrameDatabaseError(
-            "DataFrame database operations require pintos-utils[mysql,polars]",
+            f"DataFrame operations require pintos-utils[{extra}]",
             operation=operation,
             original_exception=error,
         ) from error
